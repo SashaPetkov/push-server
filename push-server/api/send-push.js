@@ -1,6 +1,5 @@
 const admin = require('firebase-admin');
 
-// Безопасная инициализация Firebase Admin
 function initFirebase() {
   if (admin.apps.length) return;
 
@@ -11,18 +10,11 @@ function initFirebase() {
 
   let serviceAccount;
   try {
-    // Если ключ передан как строка JSON
     serviceAccount = typeof rawKey === 'string' ? JSON.parse(rawKey) : rawKey;
   } catch (e) {
-    // Если внутри строки есть неэкранированные переносы
-    try {
-      serviceAccount = JSON.parse(Buffer.from(rawKey, 'base64').toString('utf8'));
-    } catch (err) {
-      throw new Error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON: ' + e.message);
-    }
+    serviceAccount = JSON.parse(Buffer.from(rawKey, 'base64').toString('utf8'));
   }
 
-  // Защита от поврежденных приватных ключей (\n)
   if (serviceAccount.private_key && typeof serviceAccount.private_key === 'string') {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
   }
@@ -33,7 +25,6 @@ function initFirebase() {
 }
 
 module.exports = async (req, res) => {
-  // CORS-заголовки
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -46,7 +37,6 @@ module.exports = async (req, res) => {
     return res.status(200).end();
   }
 
-  // При GET-запросе в браузере показываем статус готовности
   if (req.method === 'GET') {
     try {
       initFirebase();
@@ -63,29 +53,34 @@ module.exports = async (req, res) => {
   try {
     initFirebase();
   } catch (err) {
-    console.error('Firebase init error:', err);
-    return res.status(500).json({ error: 'Firebase configuration error: ' + err.message });
+    return res.status(500).json({ error: 'Firebase init error: ' + err.message });
   }
 
   const { token, callerName, url } = req.body || {};
 
   if (!token || !callerName) {
-    return res.status(400).json({ error: 'Missing token or callerName in request body' });
+    return res.status(400).json({ error: 'Missing token or callerName' });
   }
 
+  // Полноценный WebPush-пейлоад для спящего браузера
   const message = {
     token: token,
-    notification: {
+    data: {
       title: 'Входящий видеозвонок',
-      body: `${callerName} звонит вам!`
+      body: `${callerName} звонит вам!`,
+      url: url || '/'
     },
     webpush: {
       headers: {
-        Urgency: 'high'
+        Urgency: 'high',
+        TTL: '60' // Доставить за 60 секунд
       },
       notification: {
+        title: 'Входящий видеозвонок',
+        body: `${callerName} звонит вам!`,
+        icon: 'https://cdn-icons-png.flaticon.com/512/724/724664.png',
         requireInteraction: true,
-        icon: 'https://cdn-icons-png.flaticon.com/512/724/724664.png'
+        vibrate: [500, 200, 500, 200, 500]
       },
       fcmOptions: {
         link: url || '/'
